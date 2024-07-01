@@ -85,8 +85,7 @@ class TransformerBlock(nn.Module):
         z = self.weights_o(z) # (B, T, H) 
         z += x # (B, T, H) 
 
-        z = self.ff(z) # (B, T, H) 
-        z += x # FIXME: Should we add z from the line above here instead of x?
+        z = self.ff(z) + z # (B, T, H) 
 
         return z
 
