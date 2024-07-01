@@ -36,9 +36,9 @@ class AttentionHead(nn.Module):
         self.input_size = input_size
         self.head_size = head_size
 
-        self.weights_k = torch.nn.Linear(self.input_size, self.head_size, bias=False)
-        self.weights_q = torch.nn.Linear(self.input_size, self.head_size, bias=False)
-        self.weights_v = torch.nn.Linear(self.input_size, self.head_size, bias=False)
+        self.weights_k = nn.Linear(self.input_size, self.head_size, bias=False)
+        self.weights_q = nn.Linear(self.input_size, self.head_size, bias=False)
+        self.weights_v = nn.Linear(self.input_size, self.head_size, bias=False)
 
 
     def forward(self, x):
@@ -50,10 +50,10 @@ class AttentionHead(nn.Module):
         q = self.weights_q(x) # (B, T, H/n)
         v = self.weights_v(x) # (B, T, H/n)
 
-        z = q @ k.transpose(1,2)/self.head_size**0.5 # (B, T, T) the attention matrix
-        z = z.masked_fill(tril==0, float("-inf"))
-        z = F.softmax(z, dim=2)
-        z = z @ v # (B, T, H/n) the values
+        attn = q @ k.transpose(1,2)/self.head_size**0.5 # (B, T, T) the attention matrix
+        attn = attn.masked_fill(tril==0, float("-inf"))
+        attn = F.softmax(attn, dim=2)
+        z = attn @ v # (B, T, H/n) the values
 
         return z
 
