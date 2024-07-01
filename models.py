@@ -57,19 +57,16 @@ class AttentionHead(nn.Module):
 
         return z
 
-class Transformer(nn.Module):
+class TransformerBlock(nn.Module):
 
-    def __init__(self, vocab_size: int, hidden_size: int, num_heads: int):
+    def __init__(self, hidden_size: int, num_heads: int):
         assert hidden_size % num_heads == 0, "num_heads must divide hidden_size"
         super().__init__()
-        self.vocab_size = vocab_size
         self.hidden_size = hidden_size
+        self.num_heads = num_heads
         self.head_size = self.hidden_size // num_heads
 
-        self.pos_embedding = nn.Embedding(self.vocab_size, self.hidden_size)
-        self.embedding = nn.Embedding(self.vocab_size, self.hidden_size)
-
-        self.heads = [AttentionHead(self.hidden_size, self.head_size) for _ in range(num_heads)]
+        self.heads = [AttentionHead(self.hidden_size, self.head_size) for _ in range(self.num_heads)]
         self.weights_o = nn.Linear(self.hidden_size, self.hidden_size)
 
         ff_size = self.hidden_size*4
@@ -79,6 +76,33 @@ class Transformer(nn.Module):
             nn.Linear(ff_size, self.hidden_size)
         )
 
+    def forward(self, x):
+        # x: (B, T, H)
+        zs = []
+        for head in self.heads:
+            zs.append(head(x)) # (B, T, H/n)
+        z = torch.cat(zs, dim=2) # (B, T, H)
+        z = self.weights_o(z) # (B, T, H) 
+        z += x # (B, T, H) 
+
+        z = self.ff(z) # (B, T, H) 
+        z += x # FIXME: Should we add z from the line above here instead of x?
+
+        return z
+
+class Transformer(nn.Module):
+
+    def __init__(self, vocab_size: int, hidden_size: int, num_heads: int):
+        assert hidden_size % num_heads == 0, "num_heads must divide hidden_size"
+        super().__init__()
+        self.vocab_size = vocab_size
+        self.hidden_size = hidden_size
+        self.num_heads = num_heads
+        self.head_size = self.hidden_size // self.num_heads
+
+        self.pos_embedding = nn.Embedding(self.vocab_size, self.hidden_size)
+        self.embedding = nn.Embedding(self.vocab_size, self.hidden_size)
+        self.block = TransformerBlock(self.hidden_size, self.num_heads)
         self.weights_proj = nn.Linear(self.hidden_size, self.vocab_size)
 
     def forward(self, x):
@@ -86,18 +110,6 @@ class Transformer(nn.Module):
         _, seq_length = x.shape
         x = self.embedding(x) # (B, T, H)
         x += self.pos_embedding(torch.arange(0, seq_length)) # (B, T, H)
-        
-        zs = []
-        for head in self.heads:
-            zs.append(head(x)) # (B, T, H/n)
-        z = torch.cat(zs, dim=2) # (B, T, H)
-
-        z = self.weights_o(z) # (B, T, H) 
-        z += x # (B, T, H) 
-
-        z = self.ff(z) # (B, T, H)
-        z += x
-
+        z = self.block(x) # (B, T, H)
         z = self.weights_proj(z) # (B, T, V) where V is vocab_size, logits
-
         return z
