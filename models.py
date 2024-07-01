@@ -66,7 +66,7 @@ class TransformerBlock(nn.Module):
         self.num_heads = num_heads
         self.head_size = self.hidden_size // num_heads
 
-        self.heads = [AttentionHead(self.hidden_size, self.head_size) for _ in range(self.num_heads)]
+        self.heads = nn.ModuleList([AttentionHead(self.hidden_size, self.head_size) for _ in range(self.num_heads)])
         self.weights_o = nn.Linear(self.hidden_size, self.hidden_size)
 
         ff_size = self.hidden_size*4
