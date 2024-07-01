@@ -76,16 +76,20 @@ class TransformerBlock(nn.Module):
             nn.Linear(ff_size, self.hidden_size)
         )
 
+        self.ln1 = nn.LayerNorm(self.hidden_size)
+        self.ln2 = nn.LayerNorm(self.hidden_size)
+
     def forward(self, x):
         # x: (B, T, H)
         zs = []
+        x_ = self.ln1(x)
         for head in self.heads:
-            zs.append(head(x)) # (B, T, H/n)
+            zs.append(head(x_)) # (B, T, H/n)
         z = torch.cat(zs, dim=2) # (B, T, H)
-        z = self.weights_o(z) # (B, T, H) 
-        z += x # (B, T, H) 
+        z = self.weights_o(z) # (B, T, H)
+        z += x # (B, T, H)
 
-        z = self.ff(z) + z # (B, T, H) 
+        z = self.ff(self.ln1(z)) + z # (B, T, H)
 
         return z
 
