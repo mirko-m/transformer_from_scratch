@@ -56,11 +56,9 @@ class Transformer(nn.Module):
         q = self.weights_q(x) # (B, T, H)
         v = self.weights_v(x) # (B, T, H)
 
-        z = q @ k.transpose(1,2) # (B, T, T) the attention matrix
-        z /= self.hidden_size**0.5
-        z = z.masked_fill(tril, float("-inf"))
+        z = q @ k.transpose(1,2)/self.hidden_size**0.5 # (B, T, T) the attention matrix
+        z = z.masked_fill(tril==0, float("-inf"))
         z = F.softmax(z, dim=2)
-        z = tril * z # (B, T, T) mask out non-causal (q, k) pairs
         z = z @ v # (B, T, H) the values
         z = z + x # (B, T, H) residual connection
         z = self.weights_o(z) # (B, T, V) where V is vocab_size, logits
