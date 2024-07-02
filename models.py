@@ -19,16 +19,16 @@ class BigramModel(nn.Module):
         # Because of that we can use idx[:, -1]
         sampled = idx[:,-1] # (B)
         out = []
-        while max_length > 0:
+        for _ in range(max_length):
             logits = self.forward(sampled) # (B, C)
             probs = F.softmax(logits, dim=-1) # (B, C)
             sampled = torch.multinomial(probs, 1, replacement=True) # (B, 1)
             sampled = sampled.flatten() # (B)
             out.append(sampled)
-            max_length -= 1
             
         return torch.cat((idx, torch.stack(out, dim=1)), dim=1)
     
+CONTEXT_LENGTH = 256
 class AttentionHead(nn.Module):
 
     def __init__(self, input_size: int, head_size: int):
@@ -104,7 +104,7 @@ class Transformer(nn.Module):
         self.head_size = self.hidden_size // self.num_heads
         self.num_blocks = num_blocks
 
-        self.pos_embedding = nn.Embedding(self.vocab_size, self.hidden_size)
+        self.pos_embedding = nn.Embedding(CONTEXT_LENGTH, self.hidden_size)
         self.embedding = nn.Embedding(self.vocab_size, self.hidden_size)
         self.blocks = nn.Sequential(*[TransformerBlock(self.hidden_size, self.num_heads) for _ in range(self.num_blocks)])
         self.ln = nn.LayerNorm(self.hidden_size)
@@ -119,3 +119,12 @@ class Transformer(nn.Module):
         x = self.ln(x) # (B, T, H)
         x = self.weights_proj(x) # (B, T, V) where V is vocab_size, logits
         return x
+
+    def generate(self, idx, max_length):
+        # idx is a tensor of indexes with shape (B, T)
+        assert max_length > 0, "max_length must be at least 1"
+        for _ in range(max_length):
+            logits = self.forward(idx) # (B, T, V)
+            sample = torch.multinomial(F.softmax(logits[:, -1, :], dim=-1), 1) # (B, 1)
+            idx = torch.cat((idx, sample), dim=1)
+        return idx
