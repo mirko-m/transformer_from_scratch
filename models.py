@@ -40,19 +40,19 @@ class AttentionHead(nn.Module):
         self.weights_k = nn.Linear(self.input_size, self.head_size, bias=False)
         self.weights_q = nn.Linear(self.input_size, self.head_size, bias=False)
         self.weights_v = nn.Linear(self.input_size, self.head_size, bias=False)
+        self.register_buffer("tril", torch.tril(torch.ones((CONTEXT_LENGTH, CONTEXT_LENGTH))))
 
 
     def forward(self, x):
         # x: (B, T, H)
         seq_length = x.shape[1]
-        tril = torch.tril(torch.ones((seq_length, seq_length))) # FIXME: should be able to precompute this
 
         k = self.weights_k(x) # (B, T, H/n) where H/n is head_size
         q = self.weights_q(x) # (B, T, H/n)
         v = self.weights_v(x) # (B, T, H/n)
 
         attn = q @ k.transpose(1,2)/self.head_size**0.5 # (B, T, T) the attention matrix
-        attn = attn.masked_fill(tril==0, float("-inf"))
+        attn = attn.masked_fill(self.tril[:seq_length,:seq_length]==0, float("-inf"))
         attn = F.softmax(attn, dim=2)
         z = attn @ v # (B, T, H/n) the values
 
