@@ -29,6 +29,7 @@ class BigramModel(nn.Module):
         return torch.cat((idx, torch.stack(out, dim=1)), dim=1)
     
 CONTEXT_LENGTH = 256
+DROPOUT = 0.2
 class AttentionHead(nn.Module):
 
     def __init__(self, input_size: int, head_size: int):
@@ -44,7 +45,7 @@ class AttentionHead(nn.Module):
     def forward(self, x):
         # x: (B, T, H)
         seq_length = x.shape[1]
-        tril = torch.tril(torch.ones((seq_length, seq_length)))
+        tril = torch.tril(torch.ones((seq_length, seq_length))) # FIXME: should be able to precompute this
 
         k = self.weights_k(x) # (B, T, H/n) where H/n is head_size
         q = self.weights_q(x) # (B, T, H/n)
@@ -94,12 +95,14 @@ class TransformerBlock(nn.Module):
             nn.ReLU(),
             nn.Linear(ff_size, self.hidden_size)
         )
+        self.dropout1 = nn.Dropout(DROPOUT)
+        self.dropout2 = nn.Dropout(DROPOUT)
         self.ln = nn.LayerNorm(self.hidden_size)
 
     def forward(self, x):
         # x: (B, T, H)
-        z = x + self.multi_head(x) # (B, T, H)
-        z = z + self.ff(self.ln(z)) # (B, T, H)
+        z = x + self.dropout1(self.multi_head(x)) # (B, T, H)
+        z = z + self.dropout2(self.ff(self.ln(z))) # (B, T, H)
         return z
 
 class Transformer(nn.Module):
@@ -115,6 +118,7 @@ class Transformer(nn.Module):
 
         self.pos_embedding = nn.Embedding(CONTEXT_LENGTH, self.hidden_size)
         self.embedding = nn.Embedding(self.vocab_size, self.hidden_size)
+        self.dropout = nn.Dropout(DROPOUT)
         self.blocks = nn.Sequential(*[TransformerBlock(self.hidden_size, self.num_heads) for _ in range(self.num_blocks)])
         self.ln = nn.LayerNorm(self.hidden_size)
         self.weights_proj = nn.Linear(self.hidden_size, self.vocab_size)
@@ -124,6 +128,7 @@ class Transformer(nn.Module):
         _, seq_length = x.shape
         x = self.embedding(x) # (B, T, H)
         x += self.pos_embedding(torch.arange(0, seq_length)) # (B, T, H)
+        x = self.dropout(x)
         x = self.blocks(x) # (B, T, H)
         x = self.ln(x) # (B, T, H)
         x = self.weights_proj(x) # (B, T, V) where V is vocab_size, logits
