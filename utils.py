@@ -81,6 +81,7 @@ def train(
     seq_length = train_dataset.seq_length
     smoothing = 0.9
     train_loss_avg = None
+    best_val_loss = float("inf")
     for i in range(num_samples_train):
         
         x, y = get_batch(batch_size, train_dataset)
@@ -103,6 +104,10 @@ def train(
                     "i: {:6d}, train_loss: {:.2f}, val_loss: {:.2f}".
                     format(i, train_loss_avg, val_loss)
                 )
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                torch.save(model.state_dict(), "model_checkpoint.pt")
+
 
 if __name__ == "__main__":
     textdata = TextData("shakespeare.txt", 32, True, train_frac=0.9)
