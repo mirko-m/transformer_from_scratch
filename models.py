@@ -56,8 +56,8 @@ class AttentionHead(nn.Module):
         z = attn @ v # (B, T, H/n) the values
 
         return z
-
-class TransformerBlock(nn.Module):
+    
+class MultiAttentionHead(nn.Module):
 
     def __init__(self, hidden_size: int, num_heads: int):
         assert hidden_size % num_heads == 0, "num_heads must divide hidden_size"
@@ -65,32 +65,41 @@ class TransformerBlock(nn.Module):
         self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.head_size = self.hidden_size // num_heads
-
+        
         self.heads = nn.ModuleList([AttentionHead(self.hidden_size, self.head_size) for _ in range(self.num_heads)])
         self.weights_o = nn.Linear(self.hidden_size, self.hidden_size)
+        self.ln = nn.LayerNorm(self.hidden_size)
 
+    def forward(self, x):
+        # x: (B, T, H)
+        zs = []
+        x_ = self.ln(x)
+        for head in self.heads:
+            zs.append(head(x_)) # (B, T, H/n)
+        z = torch.cat(zs, dim=2) # (B, T, H)
+        z = self.weights_o(z) # (B, T, H)
+        return z
+
+class TransformerBlock(nn.Module):
+
+    def __init__(self, hidden_size: int, num_heads: int):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.num_heads = num_heads
+
+        self.multi_head = MultiAttentionHead(self.hidden_size, self.num_heads)
         ff_size = self.hidden_size*4
         self.ff = nn.Sequential(
             nn.Linear(self.hidden_size, ff_size),
             nn.ReLU(),
             nn.Linear(ff_size, self.hidden_size)
         )
-
-        self.ln1 = nn.LayerNorm(self.hidden_size)
-        self.ln2 = nn.LayerNorm(self.hidden_size)
+        self.ln = nn.LayerNorm(self.hidden_size)
 
     def forward(self, x):
         # x: (B, T, H)
-        zs = []
-        x_ = self.ln1(x)
-        for head in self.heads:
-            zs.append(head(x_)) # (B, T, H/n)
-        z = torch.cat(zs, dim=2) # (B, T, H)
-        z = self.weights_o(z) # (B, T, H)
-        z += x # (B, T, H)
-
-        z = self.ff(self.ln1(z)) + z # (B, T, H)
-
+        z = x + self.multi_head(x) # (B, T, H)
+        z = z + self.ff(self.ln(z)) # (B, T, H)
         return z
 
 class Transformer(nn.Module):
