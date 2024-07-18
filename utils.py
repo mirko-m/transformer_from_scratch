@@ -4,6 +4,7 @@ from torch import nn
 from torch.nn import functional as F 
 from torch.optim import Optimizer
 from collections.abc import Iterable
+from typing import Tuple
 
 class TextData(Dataset):
 
@@ -40,8 +41,7 @@ class TextData(Dataset):
         y = self.data[idx+1: idx+self.seq_length+1]
         return x, y
     
-def get_batch(batch_size: int, dataset: TextData) -> torch.Tensor:
-    # FIXME: add to device here?
+def get_batch(batch_size: int, dataset: TextData, device=torch.device("cpu")) -> Tuple[torch.Tensor, torch.Tensor]:
     idx = torch.randint(0, dataset.data_size - dataset.seq_length, (batch_size,))
     xs = []
     ys = []
@@ -49,17 +49,19 @@ def get_batch(batch_size: int, dataset: TextData) -> torch.Tensor:
         x_, y_ = dataset[i]
         xs.append(x_)
         ys.append(y_)
-    x = torch.stack(xs)
-    y = torch.stack(ys)
+    x = torch.stack(xs).to(device)
+    y = torch.stack(ys).to(device)
     return x, y
 
-def evaluate(model: nn.Module, val_dataset: TextData, batch_size: int, num_samples: int) -> float:
+def evaluate(model: nn.Module, val_dataset: TextData, batch_size: int, num_samples: int,
+            device=torch.device("cpu")) -> float:
     seq_length = val_dataset.seq_length
+    model = model.to(device)
     with torch.no_grad():
         loss = 0
         model.eval()
         for _ in range(num_samples):
-            x, y = get_batch(batch_size, val_dataset)
+            x, y = get_batch(batch_size, val_dataset, device=device)
             logits = model.forward(x)
             loss += F.cross_entropy(logits.view(batch_size*seq_length, -1), y.view(batch_size*seq_length))
     model.train()
@@ -75,16 +77,16 @@ def train(
     num_samples_val: int,
     eval_every: int,
     smoothing: float = 0.9,
-    verbose=True
-):
+    verbose=True,
+    device=torch.device("cpu")):
 
+    model = model.to(device)
     seq_length = train_dataset.seq_length
-    smoothing = 0.9
     train_loss_avg = None
     best_val_loss = float("inf")
     for i in range(num_samples_train):
         
-        x, y = get_batch(batch_size, train_dataset)
+        x, y = get_batch(batch_size, train_dataset, device=device)
         logits = model.forward(x)
         loss = F.cross_entropy(logits.view(batch_size*seq_length, -1), y.view(batch_size*seq_length))
         if train_loss_avg is None:
@@ -98,7 +100,7 @@ def train(
         
         if i % eval_every == 0:
             # FIXME: should I use a fixed set for validation?
-            val_loss = evaluate(model, val_dataset, batch_size, num_samples_val)
+            val_loss = evaluate(model, val_dataset, batch_size, num_samples_val, device=device)
             if verbose: 
                 print(
                     "i: {:6d}, train_loss: {:.2f}, val_loss: {:.2f}".

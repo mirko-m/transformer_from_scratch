@@ -127,7 +127,7 @@ class Transformer(nn.Module):
         # x: (B, T)
         _, seq_length = x.shape
         x = self.embedding(x) # (B, T, H)
-        x += self.pos_embedding(torch.arange(0, seq_length)) # (B, T, H)
+        x += self.pos_embedding(torch.arange(0, seq_length, device=x.device)) # (B, T, H)
         x = self.dropout(x)
         x = self.blocks(x) # (B, T, H)
         x = self.ln(x) # (B, T, H)
