@@ -7,6 +7,7 @@ if __name__ == "__main__":
     val_data = TextData("shakespeare.txt", 256, False, train_frac=0.9)
     model = Transformer(val_data.vocab_size, 384, 6, 6)
     model.load_state_dict(torch.load("./model_checkpoint.pt"))
+    model = model.eval()
     x, _ = val_data[0]
     x = x.view(1, -1)
     for c in val_data.decode(x[0]):
