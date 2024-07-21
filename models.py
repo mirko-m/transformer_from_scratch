@@ -8,11 +8,11 @@ class BigramModel(nn.Module):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, vocab_size)
         
-    def forward(self, x):
+    def forward(self, x: torch.Tensor):
         logits = self.embedding(x)
         return logits
     
-    def generate(self, idx, max_length):
+    def generate(self, idx: torch.Tensor, max_length: int) -> torch.Tensor:
         # idx is a tensor of indexes with shape (B, T)
         assert max_length > 0, "max_length must be at least 1"
         # The bigram does not use the context, just the last characters of the sequence.
@@ -28,22 +28,21 @@ class BigramModel(nn.Module):
             
         return torch.cat((idx, torch.stack(out, dim=1)), dim=1)
     
-CONTEXT_LENGTH = 256
-DROPOUT = 0.2
 class AttentionHead(nn.Module):
 
-    def __init__(self, input_size: int, head_size: int):
+    def __init__(self, input_size: int, head_size: int, context_length: int):
         super().__init__()
         self.input_size = input_size
         self.head_size = head_size
+        self.context_length = context_length
 
-        self.weights_k = nn.Linear(self.input_size, self.head_size, bias=False)
-        self.weights_q = nn.Linear(self.input_size, self.head_size, bias=False)
-        self.weights_v = nn.Linear(self.input_size, self.head_size, bias=False)
-        self.register_buffer("tril", torch.tril(torch.ones((CONTEXT_LENGTH, CONTEXT_LENGTH))))
+        self.weights_k = nn.Linear(input_size, head_size, bias=False)
+        self.weights_q = nn.Linear(input_size, head_size, bias=False)
+        self.weights_v = nn.Linear(input_size, head_size, bias=False)
+        self.register_buffer("tril", torch.tril(torch.ones((context_length, context_length))))
 
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (B, T, H)
         seq_length = x.shape[1]
 
@@ -60,18 +59,21 @@ class AttentionHead(nn.Module):
     
 class MultiAttentionHead(nn.Module):
 
-    def __init__(self, hidden_size: int, num_heads: int):
+    def __init__(self, hidden_size: int, num_heads: int, context_length: int):
         assert hidden_size % num_heads == 0, "num_heads must divide hidden_size"
         super().__init__()
         self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.head_size = self.hidden_size // num_heads
+        self.context_length = context_length
         
-        self.heads = nn.ModuleList([AttentionHead(self.hidden_size, self.head_size) for _ in range(self.num_heads)])
-        self.weights_o = nn.Linear(self.hidden_size, self.hidden_size)
-        self.ln = nn.LayerNorm(self.hidden_size)
+        self.heads = nn.ModuleList([
+            AttentionHead(hidden_size, self.head_size, context_length) for _ in range(num_heads)
+        ])
+        self.weights_o = nn.Linear(hidden_size, hidden_size)
+        self.ln = nn.LayerNorm(hidden_size)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (B, T, H)
         zs = []
         x_ = self.ln(x)
@@ -83,23 +85,24 @@ class MultiAttentionHead(nn.Module):
 
 class TransformerBlock(nn.Module):
 
-    def __init__(self, hidden_size: int, num_heads: int):
+    def __init__(self, hidden_size: int, num_heads: int, context_length: int, dropout: float):
         super().__init__()
         self.hidden_size = hidden_size
         self.num_heads = num_heads
+        self.context_length = context_length
 
-        self.multi_head = MultiAttentionHead(self.hidden_size, self.num_heads)
+        self.multi_head = MultiAttentionHead(hidden_size, num_heads, context_length)
         ff_size = self.hidden_size*4
         self.ff = nn.Sequential(
             nn.Linear(self.hidden_size, ff_size),
             nn.ReLU(),
             nn.Linear(ff_size, self.hidden_size)
         )
-        self.dropout1 = nn.Dropout(DROPOUT)
-        self.dropout2 = nn.Dropout(DROPOUT)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
         self.ln = nn.LayerNorm(self.hidden_size)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (B, T, H)
         z = x + self.dropout1(self.multi_head(x)) # (B, T, H)
         z = z + self.dropout2(self.ff(self.ln(z))) # (B, T, H)
@@ -107,7 +110,8 @@ class TransformerBlock(nn.Module):
 
 class Transformer(nn.Module):
 
-    def __init__(self, vocab_size: int, hidden_size: int, num_heads: int, num_blocks):
+    def __init__(self, vocab_size: int, hidden_size: int, num_heads: int, num_blocks,
+                 context_length: int, dropout: float):
         assert hidden_size % num_heads == 0, "num_heads must divide hidden_size"
         super().__init__()
         self.vocab_size = vocab_size
@@ -115,15 +119,18 @@ class Transformer(nn.Module):
         self.num_heads = num_heads
         self.head_size = self.hidden_size // self.num_heads
         self.num_blocks = num_blocks
+        self.context_length = context_length
 
-        self.pos_embedding = nn.Embedding(CONTEXT_LENGTH, self.hidden_size)
-        self.embedding = nn.Embedding(self.vocab_size, self.hidden_size)
-        self.dropout = nn.Dropout(DROPOUT)
-        self.blocks = nn.Sequential(*[TransformerBlock(self.hidden_size, self.num_heads) for _ in range(self.num_blocks)])
-        self.ln = nn.LayerNorm(self.hidden_size)
-        self.weights_proj = nn.Linear(self.hidden_size, self.vocab_size)
+        self.pos_embedding = nn.Embedding(context_length, hidden_size)
+        self.embedding = nn.Embedding(vocab_size, hidden_size)
+        self.dropout = nn.Dropout(dropout)
+        self.blocks = nn.Sequential(*[
+            TransformerBlock(hidden_size, num_heads, context_length, dropout) for _ in range(num_blocks)
+        ])
+        self.ln = nn.LayerNorm(hidden_size)
+        self.weights_proj = nn.Linear(hidden_size, vocab_size)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (B, T)
         _, seq_length = x.shape
         x = self.embedding(x) # (B, T, H)
@@ -134,7 +141,7 @@ class Transformer(nn.Module):
         x = self.weights_proj(x) # (B, T, V) where V is vocab_size, logits
         return x
 
-    def generate(self, idx, max_length):
+    def generate(self, idx: torch.Tensor, max_length: int) -> torch.Tensor:
         # idx is a tensor of indexes with shape (B, T)
         assert max_length > 0, "max_length must be at least 1"
         for _ in range(max_length):

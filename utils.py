@@ -4,7 +4,8 @@ from torch import nn
 from torch.nn import functional as F 
 from torch.optim import Optimizer
 from collections.abc import Iterable
-from typing import Tuple
+from typing import Tuple, List
+from datetime import datetime
 
 class TextData(Dataset):
 
@@ -30,13 +31,13 @@ class TextData(Dataset):
             self.data = data[i_split:]
         self.data_size = self.data.shape[0]
 
-    def encode(self, text_sample: str) -> list:
+    def encode(self, text_sample: str) -> List[int]:
         return [self.char_to_idx[c] for c in text_sample]
     
     def decode(self, idx: Iterable) -> str:
         return "".join(self.idx_to_char[int(i)] for i in idx)
 
-    def __getitem__(self, idx: int) -> torch.Tensor:
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         x = self.data[idx: idx+self.seq_length]
         y = self.data[idx+1: idx+self.seq_length+1]
         return x, y
@@ -54,7 +55,7 @@ def get_batch(batch_size: int, dataset: TextData, device=torch.device("cpu")) ->
     return x, y
 
 def evaluate(model: nn.Module, val_dataset: TextData, batch_size: int, num_samples: int,
-            device=torch.device("cpu")) -> float:
+             device=torch.device("cpu")) -> float:
     seq_length = val_dataset.seq_length
     model = model.to(device)
     with torch.no_grad():
@@ -77,13 +78,14 @@ def train(
     num_samples_val: int,
     eval_every: int,
     smoothing: float = 0.9,
-    verbose=True,
+    verbose: bool=True,
     device=torch.device("cpu")):
 
     model = model.to(device)
     seq_length = train_dataset.seq_length
     train_loss_avg = None
     best_val_loss = float("inf")
+    ts = datetime.now().strftime("%Y%m%dT%H%M%S")
     for i in range(num_samples_train):
         
         x, y = get_batch(batch_size, train_dataset, device=device)
@@ -99,7 +101,6 @@ def train(
         optimizer.step()
         
         if i % eval_every == 0:
-            # FIXME: should I use a fixed set for validation?
             val_loss = evaluate(model, val_dataset, batch_size, num_samples_val, device=device)
             if verbose: 
                 print(
@@ -108,7 +109,7 @@ def train(
                 )
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
-                torch.save(model.state_dict(), "model_checkpoint.pt")
+                torch.save(model.state_dict(), f"model_checkpoint_{ts}.pt")
 
 
 if __name__ == "__main__":
