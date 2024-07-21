@@ -141,11 +141,11 @@ class Transformer(nn.Module):
         x = self.weights_proj(x) # (B, T, V) where V is vocab_size, logits
         return x
 
-    def generate(self, idx: torch.Tensor, max_length: int) -> torch.Tensor:
+    def generate_next_token(self, idx: torch.Tensor) -> torch.Tensor:
         # idx is a tensor of indexes with shape (B, T)
-        assert max_length > 0, "max_length must be at least 1"
-        for _ in range(max_length):
-            logits = self.forward(idx) # (B, T, V)
-            sample = torch.multinomial(F.softmax(logits[:, -1, :], dim=-1), 1) # (B, 1)
-            idx = torch.cat((idx, sample), dim=1)
-        return idx
+        if idx.shape[1] > self.context_length:
+            print(f"Warning: the input tensor exceeds the context_length. Only the last {self.context_length} tokens will be considered.")
+        logits = self.forward(idx[:,-self.context_length:]) # (B, CL, V)
+        sample = torch.multinomial(F.softmax(logits[:, -1, :], dim=-1), 1) # (B, 1)
+        out = torch.cat((idx, sample), dim=1) # (B, CL+1)
+        return out
