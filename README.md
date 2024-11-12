@@ -1,6 +1,6 @@
 # About
 This repo is the result of my following along with Andrej Karpathy's video
-lecture on building GPT from scratch [1]. It contains for a transformer,
+lecture on building GPT from scratch [1]. It contains code for a transformer,
 specifically a decoder only model which is very similar to the original
 formulation by Vaswani et al. [2]. The main differences to the original
 formulationa are:
