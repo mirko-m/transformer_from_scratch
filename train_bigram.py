@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import torch
 from utils import TextData, train
 from models import BigramModel
